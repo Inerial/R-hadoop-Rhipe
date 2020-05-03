@@ -1,0 +1,228 @@
+library(rhdfs)
+hdfs.init()
+library(rmr2)
+rm(list=ls())
+
+rmr.options(backend = "hadoop")
+rmr.options(backend = "local")
+
+hdfs.ls("/user/shcho/data/taxi/combined")
+files <- hdfs.ls("/user/shcho/data/taxi/combined")$file
+#info + 1~12월 자료
+mr <- mapreduce(input = files[1], input.format = make.input.format(format = "csv", sep=",",
+                                                                   stringsAsFactors=F))
+res <- from.dfs(mr)
+ress <- values(res)
+colnames.tmp <- as.character(ress[,1]); colnames.tmp
+class.tmp <- as.character(ress[,2]); class.tmp
+colnames <- colnames.tmp[-1]; colnames
+class <- class.tmp[-1]; class
+class[c(6,8,9,10)] <- "numeric"
+cbind(colnames, class)
+
+##빅데이터는 매핑시 64메가로 나누어 계산하기 때문에 각각의 헤더를 적지 않는다
+##위의 데이터는 header로 사용
+
+input.format <- make.input.format( format = "csv", sep = ",", stringsAsFactors = F, col.names =
+                                     colnames, colClasses = class)
+
+filess<- files[-1]
+mr <- mapreduce( input = filess, input.format = input.format )
+mr1 <- mapreduce( input = filess[1], input.format = input.format )
+mr2 <- mapreduce( input = filess[2], input.format = input.format )
+mr3 <- mapreduce( input = filess[3], input.format = input.format )
+mr4 <- mapreduce( input = filess[4], input.format = input.format )
+mr5 <- mapreduce( input = filess[5], input.format = input.format )
+mr6 <- mapreduce( input = filess[6], input.format = input.format )
+mr7 <- mapreduce( input = filess[7], input.format = input.format )
+mr8 <- mapreduce( input = filess[8], input.format = input.format )
+mr9 <- mapreduce( input = filess[9], input.format = input.format )
+mr10 <- mapreduce( input = filess[10], input.format = input.format )
+mr11 <- mapreduce( input = filess[11], input.format = input.format )
+mr12 <- mapreduce( input = filess[12], input.format = input.format )
+v1 <- values(from.dfs(mr1)) ## 1월
+v2 <- values(from.dfs(mr2)) ## 7월
+v3 <- values(from.dfs(mr3)) ## 8월
+v4 <- values(from.dfs(mr4)) ## 9월
+v5 <- values(from.dfs(mr5)) ## 10월
+v6 <- values(from.dfs(mr6)) ## 11월
+v7 <- values(from.dfs(mr7)) ## 12월
+v8 <- values(from.dfs(mr8)) ## 2월
+v9 <- values(from.dfs(mr9)) ## 3월
+v10 <- values(from.dfs(mr10)) ## 4월 
+v11 <- values(from.dfs(mr11)) ## 5월
+v12 <- values(from.dfs(mr12)) ## 6월
+
+
+
+
+
+mykmeans.plotpick <- function(startDay, endDay, DatMat){
+  ##평균 구하기
+  mean <- mapreduce(DatMat, map = function(k,v){
+    asdf <- cbind(v$pickup_latitude, v$dropoff_latitude ,v$pickup_longitude, v$dropoff_longitude)
+    asdf <- na.omit(asdf)
+    asdf <- asdf[round(asdf[,1],-1) == 40,]
+    asdf <- asdf[round(asdf[,2],-1) == 40,]
+    asdf <- asdf[round(asdf[,3],-1) == -70,]
+    asdf <- asdf[round(asdf[,4],-1) == -70,]
+    keyval(1, c(length(asdf[,1]), sum(asdf[,1]), sum(asdf[,2]), sum(asdf[,3]), sum(asdf[,4])))
+  }
+  ,
+  reduce = function(k,v){
+    leng <- Reduce("+",v[seq_along(v) %% 5 == 1])
+    picklat <- Reduce("+",v[seq_along(v) %% 5 == 2])
+    droplat <- Reduce("+",v[seq_along(v) %% 5 == 3])
+    picklong <- Reduce("+",v[seq_along(v) %% 5 == 4])
+    droplong <- Reduce("+",v[seq_along(v) %% 5 == 0])
+    keyval(1, c(leng,picklat,droplat, picklong, droplong))
+  } ,combine=T)
+  tmp <- values(from.dfs(mean))
+  picklatmean <- tmp[2]/tmp[1]; picklongmean <- tmp[4]/tmp[1]
+  droplatmean <- tmp[3]/tmp[1]; droplongmean <- tmp[5]/tmp[1]
+  
+  
+  map.fun <- function(k,v){
+    asdf <- data.frame(v$pickup_datetime, v$dropoff_datetime, v$pickup_latitude, v$dropoff_latitude ,v$pickup_longitude, v$dropoff_longitude, stringsAsFactors = F)
+    asdf <- na.omit(asdf)
+    asdf <- asdf[round(asdf[,3],-1) == 40,]
+    asdf <- asdf[round(asdf[,4],-1) == 40,]
+    asdf <- asdf[round(asdf[,5],-1) == -70,]
+    asdf <- asdf[round(asdf[,6],-1) == -70,]
+    tmp <- asdf[,1] < endDay & asdf[,1] > startDay
+    keyval(cbind(picklatmean, picklongmean), 
+           cbind((asdf[tmp,3] - picklatmean) *100000, 
+                       (asdf[tmp,5] - picklongmean) * 100000))
+  }
+  
+  from.dfs(mapreduce(DatMat, map = map.fun))
+}
+
+
+mykmeans.plotdrop <- function(startDay, endDay, DatMat){
+  ##평균 구하기
+  mean <- mapreduce(DatMat, map = function(k,v){
+    asdf <- cbind(v$pickup_latitude, v$dropoff_latitude ,v$pickup_longitude, v$dropoff_longitude)
+    asdf <- na.omit(asdf)
+    asdf <- asdf[round(asdf[,1],-1) == 40,]
+    asdf <- asdf[round(asdf[,2],-1) == 40,]
+    asdf <- asdf[round(asdf[,3],-1) == -70,]
+    asdf <- asdf[round(asdf[,4],-1) == -70,]
+    keyval(1, c(length(asdf[,1]), sum(asdf[,1]), sum(asdf[,2]), sum(asdf[,3]), sum(asdf[,4])))
+  }
+  ,
+  reduce = function(k,v){
+    leng <- Reduce("+",v[seq_along(v) %% 5 == 1])
+    picklat <- Reduce("+",v[seq_along(v) %% 5 == 2])
+    droplat <- Reduce("+",v[seq_along(v) %% 5 == 3])
+    picklong <- Reduce("+",v[seq_along(v) %% 5 == 4])
+    droplong <- Reduce("+",v[seq_along(v) %% 5 == 0])
+    keyval(1, c(leng,picklat,droplat, picklong, droplong))
+  } ,combine=T)
+  tmp <- values(from.dfs(mean))
+  picklatmean <- tmp[2]/tmp[1]; picklongmean <- tmp[4]/tmp[1]
+  droplatmean <- tmp[3]/tmp[1]; droplongmean <- tmp[5]/tmp[1]
+  
+  map.fun <- function(k,v){
+    asdf <- data.frame(v$pickup_datetime, v$dropoff_datetime, v$pickup_latitude, v$dropoff_latitude ,v$pickup_longitude, v$dropoff_longitude, stringsAsFactors = F)
+    asdf <- na.omit(asdf)
+    asdf <- asdf[round(asdf[,3],-1) == 40,]
+    asdf <- asdf[round(asdf[,4],-1) == 40,]
+    asdf <- asdf[round(asdf[,5],-1) == -70,]
+    asdf <- asdf[round(asdf[,6],-1) == -70,]
+    tmp <- asdf[,2] < endDay & asdf[,2] > startDay
+    keyval(cbind(droplatmean, droplongmean), 
+           cbind((asdf[tmp,4] - droplatmean) * 100000, 
+                 (asdf[tmp,6] - droplongmean) * 100000))
+  }
+  
+  from.dfs(mapreduce(DatMat, map = map.fun))
+}
+
+
+
+mykmeans.forkmeans <- function(num.clusters, DatMat){
+  dist.fun <- function(Center, Dat) apply(Center, 1, function(x) colSums((t(Dat) - x)^2))
+  kmeans.map <- function(., P) {
+    nearest <- if(is.null(C)){
+      sample(1:num.clusters, nrow(P), replace = TRUE)
+    }
+    else {
+      D <- dist.fun(C, P)
+      nearest <- max.col(-D)
+    }
+    keyval(nearest, cbind(1, P))
+  }
+  kmeans.reduce <- function(k, P) keyval(k, t(as.matrix(apply(P, 2, sum))))
+  
+  
+  Dat <- to.dfs(DatMat$val)
+  latmean <- as.vector(pdatdrop$key[1,1])
+  longmean <-  as.vector(pdatdrop$key[1,2])
+  min <- Inf
+  for(i in 1:100){
+    C <- NULL
+    repeat{
+      mr <- from.dfs(mapreduce( Dat, map = kmeans.map, reduce = kmeans.reduce))
+      mrdata <- mr$val[,-1]/mr$val[,1]
+      if(sum(dim(C)[1] == dim(mrdata)[1])){
+        if(!sum(C != mrdata)) break 
+      }
+      C <- mrdata
+    }
+    D <- dist.fun(C, DatMat$val)
+    now <- sum(diag(D[,max.col(-D)]))
+    if( min > now){
+      resC <- C
+      min <- now
+    }
+    print(c(i,min,now))
+  }
+  C <- resC
+  mr <- from.dfs(mapreduce( Dat, map = kmeans.map, reduce = kmeans.reduce))
+  mrdata <- mr$val[,-1]/mr$val[,1]
+  #mr <- from.dfs(mapreduce(Dat, map = kmeans.map))
+  cbind(mr$val[,1], mrdata[,1]/100000 + latmean, mrdata[,2]/100000 + longmean)
+}
+
+rmr.options(backend = "hadoop")
+pdatpick <- mykmeans.plotpick(startDay = "2013-12-25 22:00:00",
+                              endDay = "2013-12-26 02:00:00",
+                              DatMat = mr7)
+
+
+pdatdrop <- mykmeans.plotdrop(startDay = "2013-12-25 18:00:00",
+                              endDay = "2013-12-25 22:00:00",
+                              DatMat = mr7)
+
+##kmeans는 반드시 로컬로 돌려야 속도됨
+rmr.options(backend = "local")
+respick <- mykmeans.forkmeans(num.clusters = 30, 
+                              DatMat = pdatpick)
+pick <- pdatpick$val/100000 + pdatpick$key
+resdrop <- mykmeans.forkmeans(num.clusters = 20, 
+                              DatMat = pdatdrop)
+drop <- pdatdrop$val/100000 + pdatdrop$key
+rmr.options(backend = "hadoop")
+
+respickhot <- respick[sum(respick[,1])/length(respick[,1]) < respick[,1],]
+respickhot <- resdrop[sum(resdrop[,1])/length(resdrop[,1]) < resdrop[,1],]
+
+##plot 그리기
+par(mfrow = c(1,2))
+##크게
+plot(pick, xlim = c(40.64, 40.87), ylim = c(-73.75,-74.05), cex=0.1)
+points(respick[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 2)
+points(respickhot[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 4)
+
+plot(drop, xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=0.1)
+points(resdrop[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 2)
+points(resdrophot[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 4)
+##맨해튼
+plot(pick, xlim = c(40.72, 40.785), ylim = c(-73.94,-74.01), cex=0.1)
+points(respick[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 2)
+points(respickhot[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 4)
+
+plot(drop, xlim = c(40.72, 40.785), ylim = c(-73.94,-74.01), cex=0.1)
+points(resdrop[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 2)
+points(resdrophot[,-1], xlim = c(40.6, 40.9), ylim = c(-73.7,-74.1), cex=1, pch=17, col = 4)
